@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Warm Vintage Retro Palette */
+  --background: #FAF6EF;
+  --foreground: #2C2623;
+  --card: #FFFDF9;
+  --card-foreground: #2C2623;
+  --popover: #FFFDF9;
+  --popover-foreground: #2C2623;
+  --primary: #C2410C; /* Warm Terracotta */
+  --primary-foreground: #FFFFFF;
+  --secondary: #1E293B; /* Vintage Deep Navy */
+  --secondary-foreground: #FFFFFF;
+  --muted: #F3EBDD;
+  --muted-foreground: #786C60;
+  --accent: #EFE4D2;
+  --accent-foreground: #1E293B;
+  --destructive: #BE123C;
+  --border: #E6DCB8;
+  --input: #E4DAC9;
+  --ring: #C2410C;
+  --chart-1: #C2410C;
+  --chart-2: #D97706;
+  --chart-3: #1E293B;
+  --chart-4: #047857;
+  --chart-5: #6B7280;
+  --radius: 0.75rem;
+  --sidebar: #FAF6EF;
+  --sidebar-foreground: #2C2623;
+  --sidebar-primary: #C2410C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #EFE4D2;
+  --sidebar-accent-foreground: #1E293B;
+  --sidebar-border: #E4DAC9;
+  --sidebar-ring: #C2410C;
+}
+
+.dark {
+  --background: #1C1917;
+  --foreground: #FAF6EF;
+  --card: #292524;
+  --card-foreground: #FAF6EF;
+  --popover: #292524;
+  --popover-foreground: #FAF6EF;
+  --primary: #EA580C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #334155;
+  --secondary-foreground: #FAF6EF;
+  --muted: #44403C;
+  --muted-foreground: #A8A29E;
+  --accent: #44403C;
+  --accent-foreground: #FAF6EF;
+  --destructive: #F43F5E;
+  --border: #44403C;
+  --input: #44403C;
+  --ring: #EA580C;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground selection:bg-orange-200 selection:text-orange-950;
+  }
+  html {
+    @apply font-sans scroll-smooth;
+  }
+}
+
+/* Retro Postcard / Paper Texture & Ticket Styles */
+.retro-card {
+  background-color: #FFFDF9;
+  border: 1px solid #E6DDD0;
+  box-shadow: 0 4px 12px -2px rgba(92, 70, 48, 0.08), 0 2px 4px -2px rgba(92, 70, 48, 0.04);
+}
+
+.retro-card-interactive {
+  background-color: #FFFDF9;
+  border: 1px solid #E6DDD0;
+  box-shadow: 0 4px 12px -2px rgba(92, 70, 48, 0.08);
+  transition: all 0.2s ease-in-out;
+}
+
+.retro-card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: #D4C5B0;
+  box-shadow: 0 10px 20px -3px rgba(92, 70, 48, 0.12);
+}
+
+.retro-stamp {
+  border: 1.5px dashed #D48B68;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
