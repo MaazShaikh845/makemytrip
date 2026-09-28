@@ -37,14 +37,14 @@ public class BookingController {
 
         resolveUser(userId);
 
-        String flightId = (String) body.get("flightId");
+        String flightId = body.get("flightId") != null ? body.get("flightId").toString() : null;
         int seats = body.containsKey("seats") ? ((Number) body.get("seats")).intValue() : 1;
 
-        if (flightId == null || flightId.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Flight identifier is required");
+        if ((flightId == null || flightId.isBlank()) && (body.get("airline") == null || body.get("destination") == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Flight identifier or flight details are required");
         }
 
-        BookingRecord record = bookingService.bookFlight(userId, flightId, seats);
+        BookingRecord record = bookingService.bookFlight(userId, flightId, seats, body);
         return ResponseEntity.status(HttpStatus.CREATED).body(record);
     }
 
@@ -87,9 +87,11 @@ public class BookingController {
     @PutMapping("/{id}/cancel")
     public BookingRecord cancelBooking(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @PathVariable String id) {
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body) {
 
         resolveUser(userId);
-        return bookingService.cancelBooking(id, userId);
+        String reason = body != null ? String.valueOf(body.getOrDefault("reason", "Change of plans")) : "Change of plans";
+        return bookingService.cancelBooking(id, userId, reason);
     }
 }

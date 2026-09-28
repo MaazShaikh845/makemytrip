@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import SignupDialog from "@/components/ui/SignupDialog";
 import { Button } from "@/components/ui/button";
 import { useSelector } from "react-redux";
@@ -35,8 +36,11 @@ import {
   Compass as CompassIcon,
   Flame,
   Globe2,
+  Radio,
 } from "lucide-react";
-import { getflights, gethotels } from "@/lib/api";
+import { getflights, gethotels, getLiveFlightStatuses, FlightLiveStatus } from "@/lib/api";
+import PersonalizedRecommendations from "@/components/PersonalizedRecommendations";
+import { recordInteraction } from "@/lib/recommendationEngine";
 import {
   Dialog,
   DialogContent,
@@ -88,45 +92,37 @@ export interface TourRecord {
   imageUrl: string;
 }
 
-const PRESET_ROUTES = [
-  { from: "Delhi (DEL)", to: "Mumbai (BOM)", label: "DEL → BOM", price: "₹3,850" },
-  { from: "Bengaluru (BLR)", to: "Hyderabad (HYD)", label: "BLR → HYD", price: "₹2,999" },
-  { from: "Delhi (DEL)", to: "Goa (GOI)", label: "DEL → GOI", price: "₹4,120" },
-  { from: "Mumbai (BOM)", to: "Dubai (DXB)", label: "BOM → DXB", price: "₹9,400" },
-  { from: "New York (JFK)", to: "London (LHR)", label: "JFK → LHR", price: "₹28,500" },
-];
-
 const TRENDING_GETAWAYS = [
   {
     title: "Goa Sun & Beaches",
     tag: "Trending Beach",
     price: "₹4,120",
-    from: "Delhi (DEL)",
-    to: "Goa (GOI)",
+    from: "Goa, India",
+    to: "Mumbai, India",
     img: "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=600",
   },
   {
     title: "Royal Jaipur Forts",
     tag: "Heritage Special",
     price: "₹2,890",
-    from: "Mumbai (BOM)",
-    to: "Jaipur (JAI)",
+    from: "New Delhi, India",
+    to: "Jaipur, India",
     img: "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=600",
   },
   {
     title: "Kashmir Valley Snow",
     tag: "Mountain Escape",
     price: "₹5,400",
-    from: "Delhi (DEL)",
-    to: "Srinagar (SXR)",
+    from: "New Delhi, India",
+    to: "Srinagar, India",
     img: "https://images.unsplash.com/photo-1595815771614-ade9d652a65d?w=600",
   },
   {
     title: "Dubai Skyline & Safari",
     tag: "International",
     price: "₹9,400",
-    from: "Mumbai (BOM)",
-    to: "Dubai (DXB)",
+    from: "Mumbai, India",
+    to: "Dubai, UAE",
     img: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=600",
   },
 ];
@@ -136,8 +132,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"flights" | "hotels" | "tours">("flights");
 
   // Search parameters
-  const [origin, setOrigin] = useState("Delhi (DEL)");
-  const [destination, setDestination] = useState("Mumbai (BOM)");
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
   const [departureDate, setDepartureDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -147,10 +143,12 @@ export default function Home() {
   const [cabinClass, setCabinClass] = useState("ECONOMY");
 
   // Data states
+  const [allDbFlights, setAllDbFlights] = useState<any[]>([]);
   const [flights, setFlights] = useState<FlightRecord[]>([]);
   const [hotels, setHotels] = useState<HotelRecord[]>([]);
   const [tours, setTours] = useState<TourRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [liveStatuses, setLiveStatuses] = useState<Record<string, FlightLiveStatus>>({});
 
   // Filters & sorting
   const [onlyNonStop, setOnlyNonStop] = useState(false);
@@ -165,148 +163,88 @@ export default function Home() {
   const [clientEmail, setClientEmail] = useState("passenger@makemytour.com");
   const [clientPhone, setClientPhone] = useState("+91 9876543210");
 
-  const parseAirportCode = (str: string) => {
-    const match = str.match(/\(([^)]+)\)/);
-    return match ? match[1] : str.trim();
-  };
-
-  const parseCityLabel = (str: string) => {
-    return str.split("(")[0].trim();
-  };
-
   const swapLocations = () => {
     const temp = origin;
     setOrigin(destination);
     setDestination(temp);
   };
 
-  const createSimulatedFleet = useCallback(
-    (orig: string, dest: string, baseDate: string, seatClass: string): FlightRecord[] => {
-      const origCode = parseAirportCode(orig).toUpperCase();
-      const destCode = parseAirportCode(dest).toUpperCase();
+  // Dynamic suggestions from database flights only
+  const availableOrigins = useMemo(() => {
+    const origins = allDbFlights.map((f) => f.origin).filter(Boolean);
+    return Array.from(new Set(origins));
+  }, [allDbFlights]);
 
-      const airlineFleet = [
-        {
-          airline: "Air India Express",
-          flightNumber: "AI-802",
-          depHour: 6,
-          depMin: 15,
-          duration: 130,
-          baseRate: 4200,
-          stops: "Non-stop",
-          meal: true,
-          baggage: "15kg check-in + 7kg cabin",
-        },
-        {
-          airline: "IndiGo Airways",
-          flightNumber: "6E-204",
-          depHour: 9,
-          depMin: 45,
-          duration: 125,
-          baseRate: 3850,
-          stops: "Non-stop",
-          meal: false,
-          baggage: "15kg check-in + 7kg cabin",
-        },
-        {
-          airline: "Vistara Premier",
-          flightNumber: "UK-955",
-          depHour: 14,
-          depMin: 0,
-          duration: 135,
-          baseRate: 5100,
-          stops: "Non-stop",
-          meal: true,
-          baggage: "20kg check-in + 7kg cabin",
-        },
-        {
-          airline: "SpiceJet Commercial",
-          flightNumber: "SG-301",
-          depHour: 18,
-          depMin: 20,
-          duration: 140,
-          baseRate: 3499,
-          stops: "Non-stop",
-          meal: false,
-          baggage: "15kg check-in + 7kg cabin",
-        },
-        {
-          airline: "Emirates International",
-          flightNumber: "EK-508",
-          depHour: 21,
-          depMin: 30,
-          duration: 275,
-          baseRate: 9400,
-          stops: "1 Stop",
-          meal: true,
-          baggage: "30kg check-in + 7kg cabin",
-        },
-      ];
+  const availableDestinations = useMemo(() => {
+    const dests = allDbFlights.map((f) => f.destination).filter(Boolean);
+    return Array.from(new Set(dests));
+  }, [allDbFlights]);
 
-      const multiplier = seatClass === "BUSINESS" ? 2.8 : seatClass === "FIRST" ? 4.5 : 1;
+  const databaseRoutes = useMemo(() => {
+    const routesMap = new Map<string, { from: string; to: string; price: string; airline: string }>();
+    allDbFlights.forEach((f) => {
+      if (f.origin && f.destination) {
+        const key = `${f.origin}__${f.destination}`;
+        if (!routesMap.has(key)) {
+          routesMap.set(key, {
+            from: f.origin,
+            to: f.destination,
+            price: `₹${f.price?.toLocaleString("en-IN") || 3999}`,
+            airline: f.airline || "Flight",
+          });
+        }
+      }
+    });
+    return Array.from(routesMap.values());
+  }, [allDbFlights]);
 
-      return airlineFleet.map((plane, idx) => {
-        const departure = new Date(`${baseDate}T00:00:00`);
-        departure.setHours(plane.depHour, plane.depMin, 0, 0);
-
-        const arrival = new Date(departure.getTime() + plane.duration * 60000);
-
-        return {
-          id: `dyn-flt-${idx}-${Date.now()}`,
-          airline: plane.airline,
-          flightNumber: plane.flightNumber,
-          origin: origCode,
-          destination: destCode,
-          departureTime: departure.toISOString(),
-          arrivalTime: arrival.toISOString(),
-          price: Math.round(plane.baseRate * multiplier),
-          availableSeats: Math.floor(Math.random() * 20) + 4,
-          classType: seatClass,
-          durationMinutes: plane.duration,
-          stops: plane.stops,
-          isDatabase: false,
-          refundable: true,
-          mealIncluded: plane.meal,
-          baggage: plane.baggage,
-        };
-      });
-    },
-    []
-  );
-
-  // Execute Search query
+  // Execute Search query - STRICTLY DATABASE ONLY
   const executeFlightLookup = useCallback(
     async (fromLoc = origin, toLoc = destination, date = departureDate, seatClass = cabinClass) => {
       setIsLoading(true);
 
-      const targetOrig = parseAirportCode(fromLoc).toLowerCase();
-      const targetDest = parseAirportCode(toLoc).toLowerCase();
-      const targetCityOrig = parseCityLabel(fromLoc).toLowerCase();
-      const targetCityDest = parseCityLabel(toLoc).toLowerCase();
+      const targetOrig = (fromLoc || "").trim().toLowerCase();
+      const targetDest = (toLoc || "").trim().toLowerCase();
+
+      // Track search for personalisation
+      if (toLoc) {
+        recordInteraction({
+          type: "search",
+          category: "flight",
+          id: `search-${toLoc}-${Date.now()}`,
+          label: `${fromLoc || "Any"} → ${toLoc}`,
+          tags: [
+            toLoc.toLowerCase().includes("goa") || toLoc.toLowerCase().includes("beach") ? "beach" : "",
+            toLoc.toLowerCase().includes("paris") || toLoc.toLowerCase().includes("dubai") || toLoc.toLowerCase().includes("bali") ? "international" : "domestic",
+            seatClass?.toLowerCase().includes("business") ? "business" : "",
+          ].filter(Boolean),
+        });
+      }
 
       let matchedItems: FlightRecord[] = [];
 
       try {
         const dbRecords = await getflights();
-        if (Array.isArray(dbRecords) && dbRecords.length > 0) {
+        if (Array.isArray(dbRecords)) {
+          setAllDbFlights(dbRecords);
           matchedItems = dbRecords
             .filter((item: any) => {
+              if (item.source && item.source !== "DATABASE") {
+                return false;
+              }
+
               const orig = (item.origin || "").toLowerCase();
               const dest = (item.destination || "").toLowerCase();
 
               const origValid =
                 !targetOrig ||
                 orig.includes(targetOrig) ||
-                targetOrig.includes(orig) ||
-                orig.includes(targetCityOrig) ||
-                targetCityOrig.includes(orig);
+                targetOrig.includes(orig);
 
               const destValid =
                 !targetDest ||
                 dest.includes(targetDest) ||
-                targetDest.includes(dest) ||
-                dest.includes(targetCityDest) ||
-                targetCityDest.includes(dest);
+                targetDest.includes(dest);
 
               return origValid && destValid;
             })
@@ -314,8 +252,8 @@ export default function Home() {
               id: item.id || `db-${item.flightNumber}`,
               airline: item.airline || "Commercial Airline",
               flightNumber: item.flightNumber || "FL-100",
-              origin: item.origin || targetOrig.toUpperCase(),
-              destination: item.destination || targetDest.toUpperCase(),
+              origin: item.origin || fromLoc,
+              destination: item.destination || toLoc,
               departureTime: item.departureTime || `${date}T08:00:00`,
               arrivalTime: item.arrivalTime || `${date}T10:30:00`,
               price: item.price || 3999,
@@ -330,17 +268,13 @@ export default function Home() {
             }));
         }
       } catch (err) {
-        console.warn("Using simulated fleet as fallback:", err);
-      }
-
-      if (matchedItems.length === 0) {
-        matchedItems = createSimulatedFleet(fromLoc, toLoc, date, seatClass);
+        console.warn("Error fetching flights from database:", err);
       }
 
       setFlights(matchedItems);
       setIsLoading(false);
     },
-    [origin, destination, departureDate, cabinClass, createSimulatedFleet]
+    [origin, destination, departureDate, cabinClass]
   );
 
   const initializeHospitalityData = useCallback(async () => {
@@ -448,9 +382,40 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    executeFlightLookup("Delhi (DEL)", "Mumbai (BOM)", departureDate, cabinClass);
-    initializeHospitalityData();
-  }, [executeFlightLookup, initializeHospitalityData, departureDate, cabinClass]);
+    const loadInitialData = async () => {
+      try {
+        const dbRecords = await getflights();
+        if (Array.isArray(dbRecords) && dbRecords.length > 0) {
+          setAllDbFlights(dbRecords);
+          const first = dbRecords[0];
+          const initOrig = first.origin || "";
+          const initDest = first.destination || "";
+          setOrigin(initOrig);
+          setDestination(initDest);
+          executeFlightLookup(initOrig, initDest, departureDate, cabinClass);
+        } else {
+          executeFlightLookup("", "", departureDate, cabinClass);
+        }
+
+        // Fetch live flight telemetry
+        try {
+          const telemetry = await getLiveFlightStatuses();
+          const map: Record<string, FlightLiveStatus> = {};
+          telemetry.forEach((t) => {
+            if (t.flightNumber) map[t.flightNumber.toUpperCase()] = t;
+            if (t.flightId) map[t.flightId] = t;
+          });
+          setLiveStatuses(map);
+        } catch (e) {
+          console.warn("Live status load error", e);
+        }
+      } catch (err) {
+        console.warn("Initial flight load error:", err);
+      }
+      initializeHospitalityData();
+    };
+    loadInitialData();
+  }, []);
 
   const displayTime = (isoString: string) => {
     try {
@@ -489,6 +454,19 @@ export default function Home() {
   const router = useRouter();
 
   const startFlightBooking = (flight: FlightRecord) => {
+    // Track for personalisation
+    recordInteraction({
+      type: "view",
+      category: "flight",
+      id: String(flight.id),
+      label: `${flight.origin} → ${flight.destination}`,
+      tags: [
+        flight.classType?.toLowerCase().includes("business") ? "business" : "domestic",
+        flight.stops === "Non-stop" ? "non-stop" : "connecting",
+        (flight.price || 0) > 15000 ? "international" : "domestic",
+      ].filter(Boolean),
+      price: flight.price,
+    });
     const query = new URLSearchParams({
       origin: flight.origin,
       destination: flight.destination,
@@ -515,6 +493,19 @@ export default function Home() {
   };
 
   const startHotelBooking = (hotel: HotelRecord) => {
+    // Track for personalisation
+    recordInteraction({
+      type: "view",
+      category: "hotel",
+      id: String(hotel.id),
+      label: hotel.name,
+      tags: [
+        hotel.city?.toLowerCase().includes("goa") || hotel.city?.toLowerCase().includes("beach") ? "beach" : "city",
+        (hotel.pricePerNight || 0) > 10000 ? "luxury" : "budget",
+        "domestic",
+      ].filter(Boolean),
+      price: hotel.pricePerNight,
+    });
     // book-hotel page fetches all data directly from backend by ID
     router.push(`/book-hotel/${hotel.id}`);
   };
@@ -650,30 +641,43 @@ export default function Home() {
             <Compass className="w-4 h-4" />
             <span>Tours</span>
           </button>
+          <Link
+            href="/tracker"
+            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl font-bold text-sm text-[#C2410C] hover:bg-[#F3EBDD] transition-all cursor-pointer border border-transparent hover:border-[#E6DDD0] ml-auto"
+          >
+            <Radio className="w-4 h-4 text-[#C2410C] animate-pulse" />
+            <span>Live Radar</span>
+          </Link>
         </div>
 
         {/* Flight Search Fields */}
         {activeTab === "flights" && (
           <div>
-            {/* Quick Route Suggestions */}
+            {/* Quick Route Suggestions from Database */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2.5 mb-4 scrollbar-none text-xs text-[#57534E]">
               <span className="text-[#C2410C] flex items-center gap-1 font-bold">
-                <Sparkles className="w-3.5 h-3.5 text-[#D97706]" /> Popular:
+                <Sparkles className="w-3.5 h-3.5 text-[#D97706]" /> Available Database Routes:
               </span>
-              {PRESET_ROUTES.map((route, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    setOrigin(route.from);
-                    setDestination(route.to);
-                    executeFlightLookup(route.from, route.to, departureDate, cabinClass);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-[#F3EBDD] hover:bg-[#EAE0CF] border border-[#E6DDD0] text-[#57534E] hover:text-[#1E293B] font-semibold transition-all whitespace-nowrap cursor-pointer flex items-center space-x-1"
-                >
-                  <span>{route.label}</span>
-                  <span className="text-[10px] text-[#C2410C] font-bold">from {route.price}</span>
-                </button>
-              ))}
+              {databaseRoutes.length > 0 ? (
+                databaseRoutes.map((route, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setOrigin(route.from);
+                      setDestination(route.to);
+                      executeFlightLookup(route.from, route.to, departureDate, cabinClass);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-[#F3EBDD] hover:bg-[#EAE0CF] border border-[#E6DDD0] text-[#57534E] hover:text-[#1E293B] font-semibold transition-all whitespace-nowrap cursor-pointer flex items-center space-x-1"
+                  >
+                    <span>{route.from} → {route.to}</span>
+                    <span className="text-[10px] text-[#C2410C] font-bold">from {route.price}</span>
+                  </button>
+                ))
+              ) : (
+                <span className="text-xs text-[#786C60] italic">
+                  No flights in database. Add flights via Admin panel.
+                </span>
+              )}
             </div>
 
             {/* Inputs Grid */}
@@ -686,11 +690,17 @@ export default function Home() {
                 </label>
                 <input
                   type="text"
+                  list="origin-suggestions"
                   value={origin}
                   onChange={(e) => setOrigin(e.target.value)}
-                  placeholder="e.g. Delhi (DEL)"
+                  placeholder="e.g. New Delhi, India"
                   className="w-full bg-transparent text-[#1E293B] placeholder-[#A89F91] text-sm font-bold focus:outline-none"
                 />
+                <datalist id="origin-suggestions">
+                  {availableOrigins.map((orig, idx) => (
+                    <option key={idx} value={orig} />
+                  ))}
+                </datalist>
               </div>
 
               {/* Swap Button */}
@@ -712,11 +722,17 @@ export default function Home() {
                 </label>
                 <input
                   type="text"
+                  list="destination-suggestions"
                   value={destination}
                   onChange={(e) => setDestination(e.target.value)}
-                  placeholder="e.g. Mumbai (BOM)"
+                  placeholder="e.g. Mumbai, India"
                   className="w-full bg-transparent text-[#1E293B] placeholder-[#A89F91] text-sm font-bold focus:outline-none"
                 />
+                <datalist id="destination-suggestions">
+                  {availableDestinations.map((dest, idx) => (
+                    <option key={idx} value={dest} />
+                  ))}
+                </datalist>
               </div>
 
               {/* Date */}
@@ -929,6 +945,16 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ── PERSONALIZED RECOMMENDATIONS ─────────────────────────────────── */}
+      <div className="mt-12 max-w-7xl mx-auto w-full px-1">
+        <div className="bg-[#FFFDF9]/95 backdrop-blur-md border border-[#E6DDD0] rounded-3xl p-6 sm:p-8 shadow-sm">
+          <PersonalizedRecommendations
+            title="Recommended for You"
+            maxItems={12}
+          />
+        </div>
+      </div>
+
       {/* FLIGHT RESULTS CONTAINER */}
       {activeTab === "flights" && (
         <div className="mt-10 max-w-4xl mx-auto w-full">
@@ -938,8 +964,8 @@ export default function Home() {
               <div className="flex items-center space-x-2">
                 <Plane className="w-4 h-4 text-[#C2410C]" />
                 <h2 className="text-base font-bold text-[#1E293B]">
-                  Timetable: <span className="text-[#C2410C]">{parseAirportCode(origin)}</span> →{" "}
-                  <span className="text-[#1E293B]">{parseAirportCode(destination)}</span>
+                  Timetable: <span className="text-[#C2410C]">{origin || "All Origins"}</span> →{" "}
+                  <span className="text-[#1E293B]">{destination || "All Destinations"}</span>
                 </h2>
               </div>
               <p className="text-xs text-[#786C60] mt-0.5 font-medium">
@@ -991,123 +1017,166 @@ export default function Home() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredFlightList.map((flight) => (
-                <div
-                  key={flight.id}
-                  className="bg-[#FFFDF9]/95 backdrop-blur-md hover:bg-[#FFFDF9] border border-[#E6DDD0] hover:border-[#D48B68] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-5 relative"
-                >
-                  {/* Left Column: Airline & Flight Schedule */}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-xl bg-[#1E293B] flex items-center justify-center text-amber-50 font-bold text-xs shadow-xs border border-[#334155]">
-                          {flight.airline.slice(0, 2).toUpperCase()}
+              {filteredFlightList.map((flight) => {
+                const liveStatus = liveStatuses[flight.flightNumber?.toUpperCase()] || liveStatuses[flight.id];
+                return (
+                  <div
+                    key={flight.id}
+                    className="bg-[#FFFDF9]/95 backdrop-blur-md hover:bg-[#FFFDF9] border border-[#E6DDD0] hover:border-[#D48B68] rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-5 relative"
+                  >
+                    {/* Left Column: Airline & Flight Schedule */}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-9 h-9 rounded-xl bg-[#1E293B] flex items-center justify-center text-amber-50 font-bold text-xs shadow-xs border border-[#334155]">
+                            {flight.airline.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-[#1E293B]">
+                              {flight.airline}
+                            </h3>
+                            <div className="flex items-center space-x-1.5 text-xs text-[#786C60] font-medium">
+                              <span className="font-mono font-bold text-[#1E293B]">{flight.flightNumber}</span>
+                              <span>•</span>
+                              <span>{flight.classType}</span>
+                              {flight.isDatabase && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#047857]/10 text-[#047857] border border-[#047857]/30">
+                                  Official Record
+                                </span>
+                              )}
+                              {liveStatus && (
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-2xs ${
+                                    liveStatus.statusColor === "amber"
+                                      ? "bg-amber-100 text-amber-800 border-amber-300"
+                                      : liveStatus.statusColor === "blue"
+                                      ? "bg-sky-100 text-sky-800 border-sky-300"
+                                      : liveStatus.statusColor === "purple"
+                                      ? "bg-purple-100 text-purple-800 border-purple-300"
+                                      : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  }`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                                  <span>{liveStatus.statusDisplay}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
+
+                        <div className="md:hidden text-right">
+                          <div className="text-xl font-black text-[#C2410C]">
+                            ₹{(flight.price * paxCount).toLocaleString("en-IN")}
+                          </div>
+                          <span className="text-[10px] text-[#786C60] font-medium">{passengerCount} Passenger(s)</span>
+                        </div>
+                      </div>
+
+                      {/* Flight Timeline visual */}
+                      <div className="grid grid-cols-3 items-center gap-2 py-2.5 bg-[#FAF6EF] rounded-xl px-3 border border-[#E6DDD0]">
+                        {/* Origin */}
                         <div>
-                          <h3 className="text-base font-bold text-[#1E293B]">
-                            {flight.airline}
-                          </h3>
-                          <div className="flex items-center space-x-1.5 text-xs text-[#786C60] font-medium">
-                            <span className="font-mono font-bold text-[#1E293B]">{flight.flightNumber}</span>
-                            <span>•</span>
-                            <span>{flight.classType}</span>
-                            {flight.isDatabase && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#047857]/10 text-[#047857] border border-[#047857]/30">
-                                Official Record
-                              </span>
-                            )}
+                          <div className="text-lg font-black text-[#1E293B]">
+                            {displayTime(flight.departureTime)}
+                          </div>
+                          <div className="text-xs font-bold text-[#786C60]">
+                            {flight.origin}
+                          </div>
+                        </div>
+
+                        {/* Path & Duration */}
+                        <div className="text-center flex flex-col items-center">
+                          <span className="text-[11px] font-bold text-[#57534E] mb-0.5 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-[#C2410C]" />
+                            {Math.floor(flight.durationMinutes / 60)}h {flight.durationMinutes % 60}m
+                          </span>
+                          <div className="w-full flex items-center justify-center gap-1">
+                            <div className="h-[1.5px] flex-1 bg-[#D48B68]/40" />
+                            <Plane className="w-3.5 h-3.5 text-[#C2410C] transform rotate-90" />
+                            <div className="h-[1.5px] flex-1 bg-[#D48B68]/40" />
+                          </div>
+                          <span className="text-[10px] font-bold text-[#047857] mt-0.5 uppercase tracking-wide">
+                            {flight.stops || "Non-stop"}
+                          </span>
+                        </div>
+
+                        {/* Destination */}
+                        <div className="text-right">
+                          <div className="text-lg font-black text-[#1E293B]">
+                            {displayTime(flight.arrivalTime)}
+                          </div>
+                          <div className="text-xs font-bold text-[#786C60]">
+                            {flight.destination}
                           </div>
                         </div>
                       </div>
 
-                      <div className="md:hidden text-right">
-                        <div className="text-xl font-black text-[#C2410C]">
+                      {/* Contextual Delay Banner if delayed */}
+                      {liveStatus && liveStatus.delayMinutes > 0 && (
+                        <div className="mt-2.5 py-1.5 px-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex flex-wrap items-center justify-between gap-1">
+                          <span className="font-bold flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Delayed by {liveStatus.delayMinutes}m • Estimated Arrival: {displayTime(liveStatus.estimatedArrivalTime)}</span>
+                          </span>
+                          {liveStatus.delayReason && (
+                            <span className="text-[11px] text-amber-800 font-medium truncate max-w-xs">
+                              {liveStatus.delayReason}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Amenities tags */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs text-[#57534E]">
+                        <span className="flex items-center gap-1 bg-[#F3EBDD] border border-[#E6DDD0] px-2.5 py-0.5 rounded-md font-medium">
+                          <Luggage className="w-3 h-3 text-[#B45309]" />
+                          <span>{flight.baggage || "15kg Baggage"}</span>
+                        </span>
+                        {flight.mealIncluded && (
+                          <span className="flex items-center gap-1 bg-[#F3EBDD] border border-[#E6DDD0] px-2.5 py-0.5 rounded-md font-medium">
+                            <Utensils className="w-3 h-3 text-[#047857]" />
+                            <span>Meal Included</span>
+                          </span>
+                        )}
+                        <span className="text-[#C2410C] font-bold">
+                          {flight.availableSeats} seats available
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Price & Actions */}
+                    <div className="flex md:flex-col items-center justify-between md:items-end gap-2.5 pt-3 md:pt-0 border-t md:border-t-0 border-[#E6DDD0] md:border-l md:border-dashed md:pl-6 md:min-w-[170px]">
+                      <div className="hidden md:block text-right">
+                        <span className="text-[11px] text-[#786C60] font-medium block">
+                          ₹{flight.price.toLocaleString("en-IN")} / pax
+                        </span>
+                        <div className="text-2xl font-black text-[#C2410C]">
                           ₹{(flight.price * paxCount).toLocaleString("en-IN")}
                         </div>
-                        <span className="text-[10px] text-[#786C60] font-medium">{passengerCount} Passenger(s)</span>
-                      </div>
-                    </div>
-
-                    {/* Flight Timeline visual */}
-                    <div className="grid grid-cols-3 items-center gap-2 py-2.5 bg-[#FAF6EF] rounded-xl px-3 border border-[#E6DDD0]">
-                      {/* Origin */}
-                      <div>
-                        <div className="text-lg font-black text-[#1E293B]">
-                          {displayTime(flight.departureTime)}
-                        </div>
-                        <div className="text-xs font-bold text-[#786C60]">
-                          {flight.origin}
-                        </div>
+                        <span className="text-[10px] text-[#786C60] font-medium">Tariff & Taxes Incl.</span>
                       </div>
 
-                      {/* Path & Duration */}
-                      <div className="text-center flex flex-col items-center">
-                        <span className="text-[11px] font-bold text-[#57534E] mb-0.5 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-[#C2410C]" />
-                          {Math.floor(flight.durationMinutes / 60)}h {flight.durationMinutes % 60}m
-                        </span>
-                        <div className="w-full flex items-center justify-center gap-1">
-                          <div className="h-[1.5px] flex-1 bg-[#D48B68]/40" />
-                          <Plane className="w-3.5 h-3.5 text-[#C2410C] transform rotate-90" />
-                          <div className="h-[1.5px] flex-1 bg-[#D48B68]/40" />
-                        </div>
-                        <span className="text-[10px] font-bold text-[#047857] mt-0.5 uppercase tracking-wide">
-                          {flight.stops || "Non-stop"}
-                        </span>
+                      <div className="flex flex-col gap-1.5 w-full sm:w-auto md:w-full">
+                        <Button
+                          size="sm"
+                          onClick={() => triggerFlightBooking(flight)}
+                          className="w-full bg-[#C2410C] hover:bg-[#9A3412] text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs border border-[#9A3412] transition-all cursor-pointer"
+                        >
+                          <span>Reserve Pass</span>
+                          <ArrowRight className="w-4 h-4 ml-1" />
+                        </Button>
+                        <Link
+                          href={`/tracker?flight=${flight.flightNumber}`}
+                          className="w-full text-center py-1.5 px-3 bg-[#FAF6EF] hover:bg-[#F3EBDD] text-[#C2410C] border border-[#E6DDD0] hover:border-[#C2410C]/40 rounded-xl text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Radio className="w-3 h-3 text-[#C2410C] animate-pulse" />
+                          <span>Track Live Radar</span>
+                        </Link>
                       </div>
-
-                      {/* Destination */}
-                      <div className="text-right">
-                        <div className="text-lg font-black text-[#1E293B]">
-                          {displayTime(flight.arrivalTime)}
-                        </div>
-                        <div className="text-xs font-bold text-[#786C60]">
-                          {flight.destination}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Amenities tags */}
-                    <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs text-[#57534E]">
-                      <span className="flex items-center gap-1 bg-[#F3EBDD] border border-[#E6DDD0] px-2.5 py-0.5 rounded-md font-medium">
-                        <Luggage className="w-3 h-3 text-[#B45309]" />
-                        <span>{flight.baggage || "15kg Baggage"}</span>
-                      </span>
-                      {flight.mealIncluded && (
-                        <span className="flex items-center gap-1 bg-[#F3EBDD] border border-[#E6DDD0] px-2.5 py-0.5 rounded-md font-medium">
-                          <Utensils className="w-3 h-3 text-[#047857]" />
-                          <span>Meal Included</span>
-                        </span>
-                      )}
-                      <span className="text-[#C2410C] font-bold">
-                        {flight.availableSeats} seats available
-                      </span>
                     </div>
                   </div>
-
-                  {/* Right Column: Price & Book Button */}
-                  <div className="flex md:flex-col items-center justify-between md:items-end gap-2 pt-3 md:pt-0 border-t md:border-t-0 border-[#E6DDD0] md:border-l md:border-dashed md:pl-6 md:min-w-[160px]">
-                    <div className="hidden md:block text-right">
-                      <span className="text-[11px] text-[#786C60] font-medium block">
-                        ₹{flight.price.toLocaleString("en-IN")} / pax
-                      </span>
-                      <div className="text-2xl font-black text-[#C2410C]">
-                        ₹{(flight.price * paxCount).toLocaleString("en-IN")}
-                      </div>
-                      <span className="text-[10px] text-[#786C60] font-medium">Tariff & Taxes Incl.</span>
-                    </div>
-
-                    <Button
-                      size="sm"
-                      onClick={() => triggerFlightBooking(flight)}
-                      className="w-full sm:w-auto md:w-full bg-[#C2410C] hover:bg-[#9A3412] text-white font-bold text-xs py-2 px-4 rounded-xl shadow-xs border border-[#9A3412] transition-all cursor-pointer"
-                    >
-                      <span>Reserve Pass</span>
-                      <ArrowRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

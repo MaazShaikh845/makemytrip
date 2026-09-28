@@ -8,21 +8,28 @@ import com.makemytrip.flight.FlightRepository;
 import com.makemytrip.hotel.Hotel;
 import com.makemytrip.hotel.HotelRepository;
 
+import com.makemytrip.review.Review;
+import com.makemytrip.review.ReviewReply;
+import com.makemytrip.review.ReviewRepository;
+
 @Component
 public class DataSeeder implements CommandLineRunner {
 
     private final HotelRepository hotelRepository;
     private final FlightRepository flightRepository;
+    private final ReviewRepository reviewRepository;
 
-    public DataSeeder(HotelRepository hotelRepository, FlightRepository flightRepository) {
+    public DataSeeder(HotelRepository hotelRepository, FlightRepository flightRepository, ReviewRepository reviewRepository) {
         this.hotelRepository = hotelRepository;
         this.flightRepository = flightRepository;
+        this.reviewRepository = reviewRepository;
     }
 
     @Override
     public void run(String... args) {
         seedHotels();
         seedFlights();
+        seedReviews();
     }
 
     private void seedHotels() {
@@ -89,23 +96,23 @@ public class DataSeeder implements CommandLineRunner {
             return;
         }
 
-        Flight f1 = flight("IndiGo", "6E-101", "DEL", "BOM",
+        Flight f1 = flight("IndiGo", "6E-101", "New Delhi, India", "Mumbai, India",
                 "2025-12-01T06:00:00", "2025-12-01T08:10:00",
                 3499, 120, "ECONOMY", 130);
 
-        Flight f2 = flight("Air India", "AI-202", "BOM", "DEL",
+        Flight f2 = flight("Air India", "AI-202", "Mumbai, India", "New Delhi, India",
                 "2025-12-02T14:00:00", "2025-12-02T16:15:00",
                 4200, 200, "BUSINESS", 135);
 
-        Flight f3 = flight("SpiceJet", "SG-303", "BLR", "HYD",
+        Flight f3 = flight("SpiceJet", "SG-303", "Bengaluru, India", "Hyderabad, India",
                 "2025-12-03T09:30:00", "2025-12-03T10:45:00",
                 1999, 180, "ECONOMY", 75);
 
-        Flight f4 = flight("Vistara", "UK-404", "DEL", "BLR",
+        Flight f4 = flight("Vistara", "UK-404", "New Delhi, India", "Bengaluru, India",
                 "2025-12-04T07:00:00", "2025-12-04T09:40:00",
                 5500, 80, "BUSINESS", 160);
 
-        Flight f5 = flight("GoAir", "G8-505", "MAA", "CCU",
+        Flight f5 = flight("GoAir", "G8-505", "Chennai, India", "Kolkata, India",
                 "2025-12-05T11:00:00", "2025-12-05T13:30:00",
                 2800, 150, "ECONOMY", 150);
 
@@ -128,6 +135,77 @@ public class DataSeeder implements CommandLineRunner {
         f.setAvailableSeats(seats);
         f.setClassType(classType);
         f.setDurationMinutes(durationMinutes);
+        f.setSource("DATABASE");
         return f;
+    }
+
+    private void seedReviews() {
+        if (reviewRepository.count() > 0) {
+            return;
+        }
+
+        List<Hotel> hotels = hotelRepository.findAll();
+        if (!hotels.isEmpty()) {
+            Hotel h = hotels.get(0);
+
+            Review r1 = new Review();
+            r1.setTargetType("HOTEL");
+            r1.setTargetId(h.getId());
+            r1.setTargetName(h.getName());
+            r1.setUserId("seed-user-1");
+            r1.setUserName("Ananya Sharma");
+            r1.setUserEmail("ananya.sharma@example.com");
+            r1.setRating(5);
+            r1.setTitle("Exceptional heritage experience and impeccable hospitality!");
+            r1.setComment("Staying here was truly a dream. From the welcoming garland ceremony at check-in to the harbor-facing sunset tea, everything was memorable. The Sea Lounge breakfast spread was spectacular.");
+            r1.setPhotos(List.of(
+                    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
+                    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800"
+            ));
+            r1.getHelpfulUserIds().addAll(List.of("seed-user-2", "seed-user-3", "seed-user-4", "seed-user-5"));
+            r1.setHelpfulCount(4);
+
+            ReviewReply rep1 = new ReviewReply("admin-1", "Hotel Manager (MakeMyTour Partner)", "ADMIN",
+                    "Dear Ananya, thank you so much for your kind words! We are delighted that you enjoyed the Sea Lounge and the harbor views. We hope to welcome you back very soon.");
+            r1.getReplies().add(rep1);
+
+            Review r2 = new Review();
+            r2.setTargetType("HOTEL");
+            r2.setTargetId(h.getId());
+            r2.setTargetName(h.getName());
+            r2.setUserId("seed-user-2");
+            r2.setUserName("Rohan Mehta");
+            r2.setUserEmail("rohan.mehta@example.com");
+            r2.setRating(4);
+            r2.setTitle("Stunning architecture, though check-in had a small wait");
+            r2.setComment("The rooms are majestic and the historic atmosphere cannot be beaten anywhere in Mumbai. Only minor critique was a 15-minute wait during peak afternoon check-in, but the concierge was very polite.");
+            r2.getHelpfulUserIds().addAll(List.of("seed-user-1", "seed-user-3"));
+            r2.setHelpfulCount(2);
+
+            reviewRepository.saveAll(List.of(r1, r2));
+        }
+
+        List<Flight> flights = flightRepository.findAll();
+        if (!flights.isEmpty()) {
+            Flight f = flights.get(0);
+
+            Review fr1 = new Review();
+            fr1.setTargetType("FLIGHT");
+            fr1.setTargetId(f.getId());
+            fr1.setTargetName(f.getAirline() + " " + f.getFlightNumber());
+            fr1.setUserId("seed-user-3");
+            fr1.setUserName("Vikram Patel");
+            fr1.setUserEmail("vikram.patel@example.com");
+            fr1.setRating(5);
+            fr1.setTitle("Punctual departure, smooth ride and comfortable legroom");
+            fr1.setComment("Boarding was seamless at Terminal 2. The flight departed exactly on schedule and touched down 10 minutes early. Crew was courteous and pre-booked hot meals were fresh.");
+            fr1.setPhotos(List.of(
+                    "https://images.unsplash.com/photo-1540339832862-474599807836?w=800"
+            ));
+            fr1.getHelpfulUserIds().addAll(List.of("seed-user-1", "seed-user-2", "seed-user-4"));
+            fr1.setHelpfulCount(3);
+
+            reviewRepository.save(fr1);
+        }
     }
 }

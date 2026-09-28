@@ -29,6 +29,7 @@ import {
   Award,
   MapPin,
   X,
+  Armchair,
 } from "lucide-react";
 import { getflights, bookFlightApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import SignupDialog from "@/components/ui/SignupDialog";
+import ReviewSection from "@/components/Reviews/ReviewSection";
+import InteractiveSeatMap, { SeatData } from "@/components/Flights/InteractiveSeatMap";
+import DynamicPricePanel from "@/components/DynamicPricePanel";
 
 interface PromoCode {
   code: string;
@@ -134,6 +138,14 @@ export default function BookFlightPage() {
   const [customPromoInput, setCustomPromoInput] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
 
+  // Seat Selection states
+  const [selectedSeats, setSelectedSeats] = useState<SeatData[]>([]);
+  const [seatFees, setSeatFees] = useState<number>(0);
+
+  // Dynamic Pricing — effective base fare per passenger (updated by DynamicPricePanel)
+  const [dynamicUnitFare, setDynamicUnitFare] = useState<number>(0);
+  const [isFareFrozen, setIsFareFrozen] = useState<boolean>(false);
+
   // Modal states
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -184,7 +196,9 @@ export default function BookFlightPage() {
   // Calculate pricing breakdown
   const unitBaseFare = flightData.price || 3500;
   const count = Math.max(1, ticketCount);
-  const baseFare = unitBaseFare * count;
+  // Use dynamic fare if set (from DynamicPricePanel), else fall back to base
+  const effectiveUnitFare = dynamicUnitFare > 0 ? dynamicUnitFare : unitBaseFare;
+  const baseFare = effectiveUnitFare * count;
   const taxesAndSurcharges = Math.round(baseFare * 0.392);
   const otherServices = Math.round(249 * count);
 
@@ -193,7 +207,7 @@ export default function BookFlightPage() {
     return matched ? matched.discount * (count > 1 ? Math.min(count, 3) : 1) : 0;
   }, [appliedPromo, count]);
 
-  const totalAmount = Math.max(0, baseFare + taxesAndSurcharges + otherServices - discountAmount);
+  const totalAmount = Math.max(0, baseFare + seatFees + taxesAndSurcharges + otherServices - discountAmount);
 
   const handleApplyCustomPromo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,7 +240,18 @@ export default function BookFlightPage() {
     setIsProcessing(true);
     setBookingError(null);
     try {
-      const res = await bookFlightApi(user.id, flightData.id || flightId, count);
+      const res = await bookFlightApi(user.id, flightData.id || flightId, count, {
+        airline: flightData.airline,
+        flightNumber: flightData.flightNumber,
+        origin: flightData.origin,
+        destination: flightData.destination,
+        departureTime: flightData.departureTime,
+        arrivalTime: flightData.arrivalTime,
+        price: flightData.price,
+        availableSeats: flightData.availableSeats ?? count,
+        classType: flightData.classType,
+        durationMinutes: flightData.durationMinutes,
+      });
       const generatedPnr = res?.id ? `MMT-${res.id.slice(-6).toUpperCase()}` : `MMT-${Math.floor(100000 + Math.random() * 900000)}`;
       setIssuedPnr(generatedPnr);
       setIsProcessing(false);
@@ -432,6 +457,18 @@ export default function BookFlightPage() {
             </div>
           </div>
 
+          {/* Dynamic Interactive Seat Selection Map */}
+          <InteractiveSeatMap
+            ticketCount={count}
+            selectedSeats={selectedSeats}
+            onSeatsChange={(seats, totalFees) => {
+              setSelectedSeats(seats);
+              setSeatFees(totalFees);
+            }}
+            flightNumber={flightData.flightNumber}
+            aircraft={flightData.aircraft}
+          />
+
           {/* Cancellation & Date Change Policy Card */}
           <div className="bg-[#FFFDF9]/95 backdrop-blur-md border border-[#E6DDD0] rounded-3xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-3">
@@ -454,7 +491,7 @@ export default function BookFlightPage() {
                 <span className="px-2.5 py-0.5 rounded-md bg-[#1E293B] text-amber-50 font-mono font-bold text-xs flex items-center space-x-1">
                   <Plane className="w-3 h-3 text-[#C2410C]" />
                   <span>
-                    {flightData.origin.slice(0, 3).toUpperCase()}-{flightData.destination.slice(0, 3).toUpperCase()}
+                    {flightData.origin} → {flightData.destination}
                   </span>
                 </span>
                 <span className="text-sm font-black text-[#1E293B]">
@@ -523,6 +560,17 @@ export default function BookFlightPage() {
 
         {/* RIGHT COLUMN: Fare Summary & Promo Codes */}
         <div className="lg:col-span-4 space-y-6 sticky top-20">
+          {/* ── Dynamic Pricing Engine Panel ── */}
+          <DynamicPricePanel
+            basePrice={unitBaseFare}
+            bookingId={flightData.id || flightId || "flight-default"}
+            type="flight"
+            onPriceChange={(price, frozen) => {
+              setDynamicUnitFare(price);
+              setIsFareFrozen(frozen);
+            }}
+          />
+
           {/* Fare Summary Card */}
           <div className="bg-[#FFFDF9]/95 backdrop-blur-md border border-[#E6DDD0] rounded-3xl p-6 shadow-md">
             <h3 className="text-base font-black text-[#1E293B] flex items-center space-x-2 border-b border-[#E6DDD0] pb-3 mb-4">
@@ -531,10 +579,26 @@ export default function BookFlightPage() {
             </h3>
 
             <div className="space-y-3 text-xs text-[#57534E]">
+              {isFareFrozen && (
+                <div className="flex items-center gap-2 text-[10px] text-blue-400 bg-blue-900/20 border border-blue-500/20 rounded-xl px-2.5 py-1.5 mb-2">
+                  <span>❄</span> Price frozen — protected from fluctuations
+                </div>
+              )}
               <div className="flex justify-between items-center">
-                <span>Base Fare ({count} Passenger{count > 1 ? "s" : ""})</span>
+                <span>Base Fare ({count} Passenger{count > 1 ? "s" : ""})
+                  {dynamicUnitFare > 0 && unitBaseFare !== dynamicUnitFare && (
+                    <span className="ml-1 text-[#786C60] line-through">₹{(unitBaseFare * count).toLocaleString("en-IN")}</span>
+                  )}
+                </span>
                 <span className="font-bold text-[#1E293B]">₹ {baseFare.toLocaleString("en-IN")}</span>
               </div>
+
+              {seatFees > 0 && (
+                <div className="flex justify-between items-center text-[#C2410C] font-semibold bg-[#C2410C]/5 p-2 rounded-xl border border-[#C2410C]/20">
+                  <span>Seat Tariffs ({selectedSeats.map((s) => s.id).join(", ")})</span>
+                  <span>+ ₹ {seatFees.toLocaleString("en-IN")}</span>
+                </div>
+              )}
 
               <div className="flex justify-between items-center">
                 <span>Taxes and Surcharges</span>
@@ -647,6 +711,15 @@ export default function BookFlightPage() {
         </div>
       </div>
 
+      {/* ─── FLIGHT & AIRLINE REVIEWS SECTION ──────────────────────── */}
+      <div id="flight-reviews">
+        <ReviewSection
+          targetType="FLIGHT"
+          targetId={flightData?.id || (typeof flightId === "string" ? flightId : "")}
+          targetName={`${flightData?.airline} ${flightData?.flightNumber}`}
+        />
+      </div>
+
       {/* ─── FLIGHT BOOKING DETAILS MODAL (MATCHING USER SCREENSHOT) ─── */}
       <Dialog open={bookingModalOpen} onOpenChange={setBookingModalOpen}>
         <DialogContent className="max-w-xl bg-[#FFFDF9] border border-[#E6DDD0] text-[#1E293B] p-6 sm:p-7 rounded-3xl shadow-2xl">
@@ -741,6 +814,24 @@ export default function BookFlightPage() {
                 className="bg-[#FAF6EF] text-[#1E293B] border-[#E6DDD0] font-bold rounded-xl text-sm"
               />
             </div>
+
+            {/* Allocated Flight Seats */}
+            <div className="sm:col-span-2">
+              <Label className="text-xs font-bold text-[#57534E] flex items-center space-x-1.5 mb-1.5">
+                <Armchair className="w-3.5 h-3.5 text-[#C2410C]" />
+                <span>Allocated Flight Seats</span>
+              </Label>
+              <div className="bg-[#FAF6EF] text-[#1E293B] border border-[#E6DDD0] font-bold rounded-xl text-xs p-2.5 flex items-center justify-between">
+                <span>
+                  {selectedSeats.length > 0
+                    ? selectedSeats.map((s) => `${s.id} (${s.seatClass})`).join(", ")
+                    : "Standard Seats (Carrier Allocated)"}
+                </span>
+                {seatFees > 0 && (
+                  <span className="text-[#C2410C] font-black">+₹{seatFees.toLocaleString("en-IN")}</span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Fare Summary Box Inside Modal */}
@@ -755,6 +846,12 @@ export default function BookFlightPage() {
                 <span>Base Fare</span>
                 <span className="font-bold text-[#1E293B]">₹ {baseFare.toLocaleString("en-IN")}</span>
               </div>
+              {seatFees > 0 && (
+                <div className="flex justify-between text-[#C2410C] font-semibold">
+                  <span>Seat Tariffs</span>
+                  <span>+ ₹ {seatFees.toLocaleString("en-IN")}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Taxes and Surcharges</span>
                 <span className="font-bold text-[#1E293B]">₹ {taxesAndSurcharges.toLocaleString("en-IN")}</span>
@@ -849,6 +946,14 @@ export default function BookFlightPage() {
                   <span className="text-[#786C60]">Passengers:</span>
                   <span className="font-bold text-[#1E293B]">
                     {firstName} {lastName} ({ticketCount} Ticket{ticketCount > 1 ? "s" : ""})
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#786C60]">Assigned Seats:</span>
+                  <span className="font-bold text-[#C2410C]">
+                    {selectedSeats.length > 0
+                      ? selectedSeats.map((s) => s.id).join(", ")
+                      : "Standard Economy (Auto-Assigned)"}
                   </span>
                 </div>
                 <div className="flex justify-between">

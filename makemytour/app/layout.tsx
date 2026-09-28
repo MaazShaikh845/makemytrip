@@ -24,9 +24,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${fontSans.variable} font-sans h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#FAF6EF] text-[#2C2623] relative selection:bg-orange-200 selection:text-orange-950">
+      <body
+        suppressHydrationWarning
+        className="min-h-full flex flex-col bg-[#FAF6EF] text-[#2C2623] relative selection:bg-orange-200 selection:text-orange-950"
+      >
         {/* Full-bleed scenic travel background image */}
         <div className="fixed inset-0 z-0 bg-[url('https://i.pinimg.com/736x/a5/0d/05/a50d05dd4ca9116119320a244c438c19.jpg')] bg-cover bg-center bg-no-repeat pointer-events-none" />
         

@@ -14,9 +14,37 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class BookingService {
+
+    public record RefundDecision(double percentage, double amount, String status, String timeline) {}
+
+    public static RefundDecision calculateRefundDecision(BookingRecord booking, LocalDateTime now) {
+        if (booking == null || booking.getTotalPrice() <= 0 || booking.getBookedAt() == null) {
+            return new RefundDecision(0.0, 0.0, "PENDING", "No refund due");
+        }
+
+        long hoursSinceBooking = java.time.temporal.ChronoUnit.HOURS.between(booking.getBookedAt(), now);
+        double percentage;
+        String timeline;
+
+        if (hoursSinceBooking <= 24) {
+            percentage = 50.0;
+            timeline = "3-5 business days";
+        } else if (hoursSinceBooking <= 168) {
+            percentage = 25.0;
+            timeline = "5-7 business days";
+        } else {
+            percentage = 0.0;
+            timeline = "No refund due";
+        }
+
+        double amount = Math.round((booking.getTotalPrice() * percentage / 100.0) * 100.0) / 100.0;
+        return new RefundDecision(percentage, amount, "PENDING", timeline);
+    }
 
     @Autowired
     private BookingRepository bookingRepository;
@@ -31,6 +59,10 @@ public class BookingService {
     private HotelRepository hotelRepository;
 
     public BookingRecord bookFlight(String userId, String flightId, int seats) {
+        return bookFlight(userId, flightId, seats, null);
+    }
+
+    public BookingRecord bookFlight(String userId, String flightId, int seats, Map<String, Object> fallbackFlightData) {
         if (seats <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seats must be greater than 0");
         }
@@ -38,8 +70,21 @@ public class BookingService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
 
-        Flight flight = flightRepository.findById(flightId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Flight not found"));
+        Flight flight = null;
+        if (flightId != null && !flightId.isBlank()) {
+            flight = flightRepository.findById(flightId).orElse(null);
+        }
+
+        if (flight == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                "Flight not found. Only flights managed by administrators are available for booking. Please select from available flights list.");
+        }
+
+        // Ensure only DATABASE flights can be booked
+        if (flight.getSource() == null || !flight.getSource().equals("DATABASE")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, 
+                "This flight cannot be booked. Only admin-managed flights are available.");
+        }
 
         if (flight.getAvailableSeats() < seats) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Not enough seats available");
@@ -51,7 +96,7 @@ public class BookingService {
         BookingRecord record = new BookingRecord();
         record.setUserId(userId);
         record.setType("FLIGHT");
-        record.setResourceId(flightId);
+        record.setResourceId(flight.getId());
         record.setResourceName(flight.getAirline() + " (" + (flight.getFlightNumber() != null ? flight.getFlightNumber() : "") + ")");
         record.setResourceDetails(flight.getOrigin() + " → " + flight.getDestination() + " | Departure: " + flight.getDepartureTime() + " | Class: " + flight.getClassType());
         record.setQuantity(seats);
@@ -128,7 +173,7 @@ public class BookingService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not found"));
     }
 
-    public BookingRecord cancelBooking(String id, String userId) {
+    public BookingRecord cancelBooking(String id, String userId, String cancellationReason) {
         BookingRecord booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Booking not found"));
 
@@ -139,6 +184,8 @@ public class BookingService {
         if ("CANCELLED".equalsIgnoreCase(booking.getStatus())) {
             return booking;
         }
+
+        RefundDecision decision = calculateRefundDecision(booking, LocalDateTime.now());
 
         if ("FLIGHT".equalsIgnoreCase(booking.getType())) {
             flightRepository.findById(booking.getResourceId()).ifPresent(flight -> {
@@ -153,6 +200,13 @@ public class BookingService {
         }
 
         booking.setStatus("CANCELLED");
+        booking.setCancellationReason(cancellationReason == null || cancellationReason.isBlank() ? "Change of plans" : cancellationReason);
+        booking.setRefundPercentage(decision.percentage());
+        booking.setRefundAmount(decision.amount());
+        booking.setRefundStatus(decision.status());
+        booking.setRefundExpectedTimeline(decision.timeline());
+        booking.setCancelledAt(LocalDateTime.now());
+
         BookingRecord updated = bookingRepository.save(booking);
 
         userRepository.findById(userId).ifPresent(user -> {

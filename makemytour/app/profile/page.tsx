@@ -18,8 +18,9 @@ import {
   CreditCard,
   Loader2,
   Package,
+  ArrowRightLeft,
 } from "lucide-react";
-import { getMyBookings, updateUserProfile } from "@/lib/api";
+import { getMyBookings, updateUserProfile, cancelBookingApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,18 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import SignupDialog from "@/components/ui/SignupDialog";
+import TravelPreferencesCard from "@/components/TravelPreferencesCard";
+
+const CANCELLATION_REASONS = [
+  "Change of plans",
+  "Booking no longer needed",
+  "Found a better option",
+  "Schedule conflict",
+  "Price changed",
+  "Duplicate booking",
+  "Travel requirement changed",
+  "Other",
+];
 
 export default function ProfilePage() {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -40,6 +53,11 @@ export default function ProfilePage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState(CANCELLATION_REASONS[0]);
+  const [cancelingBooking, setCancelingBooking] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
@@ -110,6 +128,28 @@ export default function ProfilePage() {
       setUpdateError(err?.response?.data?.message || err?.message || "Failed to update profile");
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleCancelBooking = async () => {
+    if (!user || !user.id || !bookingToCancel) return;
+    setCancelingBooking(true);
+    setCancelError(null);
+
+    try {
+      const updatedBooking = await cancelBookingApi(user.id, bookingToCancel, cancelReason);
+      setBookings((prev) =>
+        prev.map((booking) =>
+          booking.id === bookingToCancel ? { ...booking, ...updatedBooking } : booking
+        )
+      );
+      setCancelDialogOpen(false);
+      setBookingToCancel(null);
+      setCancelReason(CANCELLATION_REASONS[0]);
+    } catch (err: any) {
+      setCancelError(err?.response?.data?.message || err?.message || "Unable to cancel this booking");
+    } finally {
+      setCancelingBooking(false);
     }
   };
 
@@ -202,6 +242,11 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
+
+          {/* Travel & Stay Preferences Card */}
+          <div className="mt-6">
+            <TravelPreferencesCard />
+          </div>
         </div>
 
         <div className="lg:col-span-8">
@@ -290,6 +335,47 @@ export default function ProfilePage() {
                           </span>
                         </div>
                       </div>
+
+                      {booking.status === "CANCELLED" ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-stone-600">
+                            <span className="font-semibold text-stone-700">Cancellation reason</span>
+                            <span>{booking.cancellationReason || "Change of plans"}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-stone-600">
+                            <span className="font-semibold text-stone-700">Refund policy</span>
+                            <span>{booking.refundPercentage ?? 0}%</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-stone-600">
+                            <span className="font-semibold text-stone-700">Refund amount</span>
+                            <span>₹ {Number(booking.refundAmount || 0).toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-stone-600">
+                            <span className="font-semibold text-stone-700">Refund status</span>
+                            <span className="capitalize text-amber-700">{booking.refundStatus || "PENDING"}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-stone-600">
+                            <span className="font-semibold text-stone-700">Expected timeline</span>
+                            <span>{booking.refundExpectedTimeline || "3-5 business days"}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBookingToCancel(booking.id);
+                              setCancelReason(CANCELLATION_REASONS[0]);
+                              setCancelDialogOpen(true);
+                              setCancelError(null);
+                            }}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[#C2410C]/30 bg-[#FFF7ED] text-[#C2410C] text-xs font-bold hover:bg-[#FEE2E2] transition-colors cursor-pointer"
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                            Cancel booking
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -385,6 +471,91 @@ export default function ProfilePage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          setCancelDialogOpen(false);
+          setBookingToCancel(null);
+          setCancelError(null);
+        } else {
+          setCancelDialogOpen(true);
+        }
+      }}>
+        <DialogContent className="max-w-md bg-white border border-stone-200 text-stone-900 p-6 rounded-2xl shadow-xl">
+          <DialogHeader className="pb-2 border-b border-stone-100">
+            <DialogTitle className="text-lg font-bold text-stone-900">
+              Cancel Booking
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-500">
+              Select a reason so we can improve travel support and calculate the refund policy accurately.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {cancelError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
+                {cancelError}
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-stone-700">Cancellation reason</Label>
+              <select
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="w-full h-10 rounded-xl border border-stone-300 bg-stone-50 px-3 text-sm text-stone-700 outline-none focus:border-[#C2410C]"
+              >
+                {CANCELLATION_REASONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-stone-600">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-stone-700">Refund rule</span>
+                <span>50% within 24 hours</span>
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="font-semibold text-stone-700">Partial refund</span>
+                <span>25% up to 7 days</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCancelDialogOpen(false);
+                  setBookingToCancel(null);
+                  setCancelError(null);
+                }}
+                className="text-xs font-bold rounded-xl"
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                className="bg-[#C2410C] hover:bg-[#9A3412] text-white text-xs font-bold rounded-xl"
+                onClick={handleCancelBooking}
+                disabled={cancelingBooking}
+              >
+                {cancelingBooking ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                    <span>Processing…</span>
+                  </>
+                ) : (
+                  <span>Confirm cancel</span>
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

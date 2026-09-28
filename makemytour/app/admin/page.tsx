@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import FlightList from "@/components/Flights/Flightlist";
 import HotelList from "@/components/Hotel/Hotel";
 import {
@@ -21,10 +22,28 @@ import {
   editflight,
   edithotel,
   getuserbyemail,
+  getFlaggedReviews,
+  unflagReview,
+  deleteReview,
+  Review,
 } from "@/lib/api";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
-import { ShieldCheck, Lock, ArrowLeft, Search, UserCheck, Plane, Hotel } from "lucide-react";
+import {
+  ShieldCheck,
+  Lock,
+  ArrowLeft,
+  Search,
+  UserCheck,
+  Plane,
+  Hotel,
+  Flag,
+  Star,
+  Trash2,
+  CheckCircle2,
+  ShieldAlert,
+  MessageSquare,
+} from "lucide-react";
 import Link from "next/link";
 import SignupDialog from "@/components/ui/SignupDialog";
 
@@ -380,14 +399,14 @@ function AddEditFlight({ flight, onSaved }: { flight: FlightData | null; onSaved
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label htmlFor="origin" className="text-[#57534E] text-xs font-bold uppercase tracking-wide">Origin (IATA Code)</Label>
+          <Label htmlFor="origin" className="text-[#57534E] text-xs font-bold uppercase tracking-wide">Origin (City / Country / Airport)</Label>
           <Input id="origin" name="origin" value={formData.origin} onChange={handleChange}
-            className="bg-[#FFFDF9] text-[#1E293B] border-[#E6DDD0] font-semibold" placeholder="e.g. DEL" required />
+            className="bg-[#FFFDF9] text-[#1E293B] border-[#E6DDD0] font-semibold" placeholder="e.g. New Delhi, India" required />
         </div>
         <div>
-          <Label htmlFor="destination" className="text-[#57534E] text-xs font-bold uppercase tracking-wide">Destination (IATA Code)</Label>
+          <Label htmlFor="destination" className="text-[#57534E] text-xs font-bold uppercase tracking-wide">Destination (City / Country / Airport)</Label>
           <Input id="destination" name="destination" value={formData.destination} onChange={handleChange}
-            className="bg-[#FFFDF9] text-[#1E293B] border-[#E6DDD0] font-semibold" placeholder="e.g. BOM" required />
+            className="bg-[#FFFDF9] text-[#1E293B] border-[#E6DDD0] font-semibold" placeholder="e.g. Mumbai, India" required />
         </div>
       </div>
 
@@ -447,6 +466,220 @@ function AddEditFlight({ flight, onSaved }: { flight: FlightData | null; onSaved
         {saving ? "Saving…" : flight ? "Update Flight Schedule" : "Add Flight Schedule"}
       </Button>
     </form>
+  );
+}
+
+// ─── Flagged Reviews Moderation ───────────────────────────────────────────────
+
+function FlaggedReviewsModeration({ adminUserId }: { adminUserId: string }) {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+
+  const fetchFlagged = async () => {
+    try {
+      setLoading(true);
+      setActionMsg(null);
+      const list = await getFlaggedReviews(adminUserId);
+      setReviews(list);
+    } catch (err: any) {
+      setActionMsg(err.message || "Failed to load flagged reviews");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adminUserId) {
+      fetchFlagged();
+    }
+  }, [adminUserId]);
+
+  const handleDismiss = async (reviewId: string) => {
+    try {
+      await unflagReview(adminUserId, reviewId);
+      setActionMsg("Flag dismissed. The review has been marked safe.");
+      fetchFlagged();
+    } catch (err: any) {
+      setActionMsg("Failed to dismiss flag.");
+    }
+  };
+
+  const handleDelete = async (reviewId: string) => {
+    if (!confirm("Are you sure you want to permanently delete this flagged review?")) return;
+    try {
+      await deleteReview(adminUserId, reviewId);
+      setActionMsg("Review permanently deleted.");
+      fetchFlagged();
+    } catch (err: any) {
+      setActionMsg("Failed to delete review.");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {actionMsg && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-center justify-between">
+          <span>{actionMsg}</span>
+          <button onClick={() => setActionMsg(null)} className="text-amber-700 font-bold ml-2">✕</button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-bold text-[#1E293B] text-base flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-amber-600" />
+            <span>Flagged Reviews Queue</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-200">
+              {reviews.length} pending
+            </span>
+          </h3>
+          <p className="text-xs text-stone-500 mt-0.5">
+            Review user-flagged comments, assess violations, and either dismiss false reports or remove inappropriate content.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchFlagged}
+          disabled={loading}
+          className="text-xs rounded-xl"
+        >
+          {loading ? "Refreshing..." : "Refresh Queue"}
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-xs text-stone-500">
+          Checking flagged content...
+        </div>
+      ) : reviews.length === 0 ? (
+        <div className="border border-emerald-200 bg-emerald-50/50 rounded-2xl p-8 text-center space-y-2">
+          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-2">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <h4 className="text-sm font-bold text-emerald-950">
+            Queue Clean — Zero Flagged Reviews
+          </h4>
+          <p className="text-xs text-emerald-800 max-w-md mx-auto">
+            All reviews adhere to community travel guidelines. Any user-flagged content will appear here immediately for moderator evaluation.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {reviews.map((rev) => (
+            <div
+              key={rev.id}
+              className="border border-stone-200 rounded-2xl p-5 bg-[#FAF6EF]/50 space-y-3"
+            >
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-stone-900 text-white">
+                    {rev.targetType}
+                  </span>
+                  <span className="font-bold text-sm text-stone-900">
+                    {rev.targetName || rev.targetId}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                    <Flag className="w-3 h-3 text-amber-700" />
+                    Reported ({rev.flagCount || 1}x)
+                  </span>
+                </div>
+              </div>
+
+              {/* Reported reason banner */}
+              <div className="bg-red-50 border border-red-200 text-red-900 text-xs p-2.5 rounded-xl font-medium flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <span>
+                  <strong>Report Reason:</strong> {rev.flagReason || "Flagged by community as inappropriate"}
+                </span>
+              </div>
+
+              {/* Review Content */}
+              <div className="bg-white border border-stone-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center justify-between text-xs text-stone-500">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-stone-800">{rev.userName}</span>
+                    {rev.userEmail && <span>({rev.userEmail})</span>}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        className={`w-3 h-3 ${
+                          s <= rev.rating ? "text-amber-500 fill-amber-500" : "text-stone-200"
+                        }`}
+                      />
+                    ))}
+                    <span className="ml-1 font-bold text-stone-800">{rev.rating}.0</span>
+                  </div>
+                </div>
+
+                {rev.title && <h5 className="text-xs font-bold text-stone-900">{rev.title}</h5>}
+                <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-line">
+                  {rev.comment}
+                </p>
+
+                {rev.photos && rev.photos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {rev.photos.map((p, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setLightboxImg(p)}
+                        className="w-16 h-16 rounded-lg overflow-hidden border border-stone-200 cursor-pointer hover:opacity-80"
+                      >
+                        <img src={p} alt="Review attachment" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleDismiss(rev.id)}
+                  className="text-xs rounded-xl font-semibold border-stone-300 cursor-pointer"
+                >
+                  Dismiss Flag (Keep Review)
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleDelete(rev.id)}
+                  className="text-xs rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete Review (Violates Policy)
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lightbox for admin inspecting flagged images */}
+      <Dialog open={!!lightboxImg} onOpenChange={() => setLightboxImg(null)}>
+        <DialogContent className="max-w-2xl bg-black/95 border-0 p-2 text-white rounded-2xl flex flex-col items-center">
+          <div className="relative w-full max-h-[80vh] flex items-center justify-center">
+            {lightboxImg && (
+              <img
+                src={lightboxImg}
+                alt="Enlarged review attachment"
+                className="max-h-[75vh] w-auto max-w-full rounded-lg object-contain"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -530,10 +763,14 @@ export default function AdminDashboard() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6 bg-[#F3EBDD] border border-[#E6DDD0]">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6 bg-[#F3EBDD] border border-[#E6DDD0]">
           <TabsTrigger value="flights">Flight Schedules</TabsTrigger>
           <TabsTrigger value="hotels">Hotel Properties</TabsTrigger>
           <TabsTrigger value="users">Passenger Accounts</TabsTrigger>
+          <TabsTrigger value="moderation" className="flex items-center gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+            <span>Review Moderation</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="flights">
@@ -547,6 +784,10 @@ export default function AdminDashboard() {
                 <FlightList
                   key={flightRefresh}
                   onSelect={(f) => setSelectedFlight(f)}
+                  onDeleted={() => {
+                    setFlightRefresh((r) => r + 1);
+                    setSelectedFlight(null);
+                  }}
                 />
                 <AddEditFlight
                   flight={selectedFlight}
@@ -592,6 +833,20 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <UserSearch />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="moderation">
+          <Card>
+            <CardHeader>
+              <CardTitle>Travel Review Moderation</CardTitle>
+              <CardDescription>
+                Examine flagged traveler reviews, evaluate reported violations, and enforce community guidelines.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FlaggedReviewsModeration adminUserId={user?.id || ""} />
             </CardContent>
           </Card>
         </TabsContent>

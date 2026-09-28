@@ -19,8 +19,11 @@ public class Flight {
     private int availableSeats;
     private String classType;       // "ECONOMY", "BUSINESS", "FIRST"
     private int durationMinutes;
+    private String source;          // "DATABASE" or "EXTERNAL"
 
-    public Flight() {}
+    public Flight() {
+        this.source = "DATABASE";
+    }
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -54,4 +57,7 @@ public class Flight {
 
     public int getDurationMinutes() { return durationMinutes; }
     public void setDurationMinutes(int durationMinutes) { this.durationMinutes = durationMinutes; }
+
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
 }

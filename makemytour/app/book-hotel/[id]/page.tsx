@@ -38,6 +38,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import SignupDialog from "@/components/ui/SignupDialog";
+import ReviewSection from "@/components/Reviews/ReviewSection";
+import InteractiveRoomGrid, {
+  HotelRoomType,
+  generateHotelRoomTypes,
+} from "@/components/Hotel/InteractiveRoomGrid";
+import DynamicPricePanel from "@/components/DynamicPricePanel";
 
 // ─── Derive varied images per hotel ──────────────────────────────────────────
 // We pick from pools of categorised Unsplash photos using the hotel's string ID
@@ -153,6 +159,11 @@ export default function BookHotelPage() {
   const [authRequired, setAuthRequired] = useState(false);
   const [allAmenitiesOpen, setAllAmenitiesOpen] = useState(false);
 
+  const [selectedRoom, setSelectedRoom] = useState<HotelRoomType | null>(null);
+  // Dynamic Pricing state
+  const [dynamicUnitFare, setDynamicUnitFare] = useState<number>(0);
+  const [isFareFrozen, setIsFareFrozen] = useState<boolean>(false);
+
   // ── Sync user details once available ─────────────────────────────────────
   useEffect(() => {
     if (user) {
@@ -169,6 +180,8 @@ export default function BookHotelPage() {
     gethotelbyid(hotelId)
       .then((data) => {
         setHotelData(data);
+        const rooms = generateHotelRoomTypes(data.pricePerNight || 3000, hotelId);
+        setSelectedRoom(rooms[0]);
         setLoading(false);
       })
       .catch((err) => {
@@ -179,7 +192,10 @@ export default function BookHotelPage() {
 
   // ── Derived values ────────────────────────────────────────────────────────
   const numRooms = Math.max(1, Number(roomsCount) || 1);
-  const pricing = hotelData ? derivePricing(hotelData.pricePerNight || 3000, numRooms) : null;
+  const activePricePerNight = selectedRoom ? selectedRoom.pricePerNight : (hotelData?.pricePerNight || 3000);
+  // If dynamic pricing has updated the fare, use that instead of room base price
+  const effectivePricePerNight = dynamicUnitFare > 0 ? dynamicUnitFare : activePricePerNight;
+  const pricing = hotelData ? derivePricing(effectivePricePerNight, numRooms) : null;
   const images = hotelData ? getHotelImages(hotelData.id || hotelId, hotelData.imageUrl) : null;
 
   // Amenities as an array (backend stores comma-separated string)
@@ -373,37 +389,87 @@ export default function BookHotelPage() {
               <p className="text-xs text-stone-500">No amenity details available.</p>
             )}
           </div>
+
+          {/* Interactive Room Category Selection Grid with 3D Previews */}
+          <div className="pt-4 border-t border-stone-200">
+            <InteractiveRoomGrid
+              basePrice={hotelData.pricePerNight || 3000}
+              hotelName={hotelData.name}
+              hotelId={hotelData.id || hotelId}
+              selectedRoom={selectedRoom}
+              onSelectRoom={(room) => setSelectedRoom(room)}
+            />
+          </div>
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="lg:col-span-5 space-y-4 sticky top-20">
 
-          {/* Room Offer Card — all data from backend */}
+          {/* ── Dynamic Pricing Engine Panel ── */}
+          <DynamicPricePanel
+            basePrice={activePricePerNight}
+            bookingId={hotelData.id || hotelId || "hotel-default"}
+            type="hotel"
+            onPriceChange={(price, frozen) => {
+              setDynamicUnitFare(price);
+              setIsFareFrozen(frozen);
+            }}
+          />
+
+          {/* Room Offer Card — dynamically reflects selected room */}
           <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-[#1E293B]">Standard Room</h2>
-              <p className="text-xs text-stone-500 mt-0.5">Fits 2 Adults</p>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-[#1E293B]">
+                  {selectedRoom?.name || "Standard Room"}
+                </h2>
+                {selectedRoom?.tag && (
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${selectedRoom.tagColor || "bg-blue-600 text-white"}`}>
+                    {selectedRoom.tag}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-stone-500 mt-0.5">
+                {selectedRoom
+                  ? `${selectedRoom.sizeSqFt} sq.ft • ${selectedRoom.bedType} • ${selectedRoom.viewType}`
+                  : "Fits 2 Adults"}
+              </p>
             </div>
 
             <ul className="space-y-1.5 text-xs text-stone-600">
-              <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>No meals included</span></li>
-              <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>10% off on food &amp; beverage services</span></li>
-              <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>Complimentary welcome drinks on arrival</span></li>
+              {selectedRoom ? (
+                selectedRoom.perks.map((perk, i) => (
+                  <li key={i} className="flex items-center space-x-2">
+                    <span className="text-[#047857] font-bold">✓</span>
+                    <span className="text-stone-800 font-medium">{perk}</span>
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>No meals included</span></li>
+                  <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>10% off on food &amp; beverage services</span></li>
+                  <li className="flex items-center space-x-2"><span className="text-stone-400">•</span><span>Complimentary welcome drinks on arrival</span></li>
+                </>
+              )}
               <li className="flex items-center space-x-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-600 inline-block"></span>
-                <span className="text-stone-700 font-medium">Non-Refundable</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block"></span>
+                <span className="text-emerald-700 font-semibold">Instant Confirmation &amp; Free Cancellation</span>
               </li>
             </ul>
 
-            {/* Live data from backend */}
+            {/* Live data from backend & room selection */}
             <div className="space-y-1.5 text-xs text-stone-700 pt-2 border-t border-stone-100">
               <div className="flex justify-between">
+                <span className="font-semibold text-stone-800">Room Category:</span>
+                <span className="font-bold text-[#1E293B]">{selectedRoom?.name || "Standard Room"}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="font-semibold text-stone-800">Price Per Night:</span>
-                <span className="font-bold text-stone-900">₹ {(hotelData.pricePerNight || 0).toLocaleString("en-IN")}</span>
+                <span className="font-bold text-stone-900">₹ {activePricePerNight.toLocaleString("en-IN")}</span>
               </div>
               <div className="flex justify-between">
                 <span className="font-semibold text-stone-800">Available Rooms:</span>
-                <span className="font-bold text-stone-900">{hotelData.availableRooms ?? "—"}</span>
+                <span className="font-bold text-stone-900">{selectedRoom?.availableInventory ?? hotelData.availableRooms ?? "—"}</span>
               </div>
               {amenitiesArr.length > 0 && (
                 <div className="flex flex-col sm:flex-row sm:justify-between pt-0.5">
@@ -416,11 +482,20 @@ export default function BookHotelPage() {
               )}
             </div>
 
-            {/* Pricing — derived from backend pricePerNight */}
+            {isFareFrozen && (
+              <div className="py-1.5 px-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-700 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-sm">❄</span> Price frozen — protected from demand surges
+                </span>
+                <span className="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded">LOCKED</span>
+              </div>
+            )}
+
+            {/* Pricing — derived from active room pricePerNight */}
             <div className="pt-3 border-t border-stone-100 flex items-end justify-between">
               <div>
                 <span className="text-xs text-stone-400 line-through block">
-                  ₹ {(hotelData.pricePerNight || 0).toLocaleString("en-IN")}
+                  ₹ {Math.round(activePricePerNight * 1.2).toLocaleString("en-IN")}
                 </span>
                 <div className="flex items-baseline space-x-1.5">
                   <span className="text-xl sm:text-2xl font-extrabold text-stone-900">
@@ -467,11 +542,26 @@ export default function BookHotelPage() {
                 <p className="text-xs text-stone-500 mt-0.5">({((hotelData.availableRooms || 10) * 39 + 184)} ratings)</p>
               </div>
             </div>
-            <button type="button" className="text-xs font-semibold text-blue-600 hover:underline cursor-pointer">
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("hotel-reviews")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="text-xs font-semibold text-blue-600 hover:underline cursor-pointer"
+            >
               All Reviews
             </button>
           </div>
         </div>
+      </div>
+
+      {/* ─── GUEST REVIEWS & RATINGS SECTION ──────────────────────── */}
+      <div id="hotel-reviews">
+        <ReviewSection
+          targetType="HOTEL"
+          targetId={hotelData?.id || (typeof hotelId === "string" ? hotelId : "")}
+          targetName={hotelData?.name}
+        />
       </div>
 
       {/* ─── MODAL 1: Hotel Booking Details ─────────────────────────────── */}
@@ -500,20 +590,28 @@ export default function BookHotelPage() {
                 <Input readOnly value={cityDisplay} className="bg-stone-50 border-stone-300 text-xs font-medium text-stone-900 rounded-lg h-9" />
               </div>
 
-              {/* Price Per Night — from backend */}
+              {/* Room Category */}
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs font-semibold text-stone-700 flex items-center space-x-1">
+                  <Bed className="w-3.5 h-3.5" /><span>Selected Room Category</span>
+                </Label>
+                <Input readOnly value={`${selectedRoom?.name || "Standard Room"} (${selectedRoom?.bedType || "King Bed"} • ${selectedRoom?.viewType || "City View"})`} className="bg-stone-50 border-stone-300 text-xs font-bold text-stone-900 rounded-lg h-9" />
+              </div>
+
+              {/* Price Per Night — from selected room */}
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-stone-700 flex items-center space-x-1">
                   <Ticket className="w-3.5 h-3.5" /><span>Price Per Night</span>
                 </Label>
-                <Input readOnly value={`₹ ${(hotelData.pricePerNight || 0).toLocaleString("en-IN")}`} className="bg-stone-50 border-stone-300 text-xs font-medium text-stone-900 rounded-lg h-9" />
+                <Input readOnly value={`₹ ${(activePricePerNight || 0).toLocaleString("en-IN")}`} className="bg-stone-50 border-stone-300 text-xs font-medium text-stone-900 rounded-lg h-9" />
               </div>
 
-              {/* Available Rooms — from backend */}
+              {/* Available Rooms */}
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-stone-700 flex items-center space-x-1">
                   <Bed className="w-3.5 h-3.5" /><span>Available Rooms</span>
                 </Label>
-                <Input readOnly value={hotelData.availableRooms ?? "—"} className="bg-stone-50 border-stone-300 text-xs font-medium text-stone-900 rounded-lg h-9" />
+                <Input readOnly value={selectedRoom?.availableInventory ?? hotelData.availableRooms ?? "—"} className="bg-stone-50 border-stone-300 text-xs font-medium text-stone-900 rounded-lg h-9" />
               </div>
             </div>
 
@@ -605,7 +703,7 @@ export default function BookHotelPage() {
               <div className="space-y-2 text-xs text-[#57534E]">
                 <div className="flex justify-between"><span className="text-[#786C60]">Hotel Property:</span><span className="font-bold text-[#1E293B]">{hotelData.name}</span></div>
                 <div className="flex justify-between"><span className="text-[#786C60]">Destination:</span><span className="font-bold text-[#1E293B]">{cityDisplay}</span></div>
-                <div className="flex justify-between"><span className="text-[#786C60]">Room Category:</span><span className="font-bold text-[#1E293B]">Standard Room ({numRooms} Room{numRooms > 1 ? "s" : ""})</span></div>
+                <div className="flex justify-between"><span className="text-[#786C60]">Room Category:</span><span className="font-bold text-[#1E293B]">{selectedRoom?.name || "Standard Room"} ({selectedRoom?.bedType || "King Bed"}, {numRooms} Room{numRooms > 1 ? "s" : ""})</span></div>
                 <div className="flex justify-between"><span className="text-[#786C60]">Lead Guest:</span><span className="font-bold text-[#1E293B]">{guestName || "Guest"}</span></div>
                 <div className="flex justify-between"><span className="text-[#786C60]">Contact Email:</span><span className="font-bold text-[#1E293B]">{guestEmail || "—"}</span></div>
                 <div className="flex justify-between border-t border-[#E6DDD0] pt-2"><span className="text-[#786C60]">Total Tariff Paid:</span><span className="font-black text-base text-[#C2410C]">₹ {totalAmount.toLocaleString("en-IN")}</span></div>

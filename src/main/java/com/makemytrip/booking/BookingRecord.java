@@ -22,6 +22,12 @@ public class BookingRecord {
     private String guestPhone;
     private LocalDateTime bookedAt;
     private String status;
+    private String cancellationReason;
+    private double refundPercentage;
+    private double refundAmount;
+    private String refundStatus;
+    private String refundExpectedTimeline;
+    private LocalDateTime cancelledAt;
 
     public BookingRecord() {}
 
@@ -63,4 +69,22 @@ public class BookingRecord {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getCancellationReason() { return cancellationReason; }
+    public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
+
+    public double getRefundPercentage() { return refundPercentage; }
+    public void setRefundPercentage(double refundPercentage) { this.refundPercentage = refundPercentage; }
+
+    public double getRefundAmount() { return refundAmount; }
+    public void setRefundAmount(double refundAmount) { this.refundAmount = refundAmount; }
+
+    public String getRefundStatus() { return refundStatus; }
+    public void setRefundStatus(String refundStatus) { this.refundStatus = refundStatus; }
+
+    public String getRefundExpectedTimeline() { return refundExpectedTimeline; }
+    public void setRefundExpectedTimeline(String refundExpectedTimeline) { this.refundExpectedTimeline = refundExpectedTimeline; }
+
+    public LocalDateTime getCancelledAt() { return cancelledAt; }
+    public void setCancelledAt(LocalDateTime cancelledAt) { this.cancelledAt = cancelledAt; }
 }

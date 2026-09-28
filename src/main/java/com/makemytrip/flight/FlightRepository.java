@@ -8,5 +8,7 @@ public interface FlightRepository extends MongoRepository<Flight, String> {
 
     List<Flight> findByOriginIgnoreCaseAndDestinationIgnoreCase(String origin, String destination);
 
+    List<Flight> findByOriginContainingIgnoreCaseAndDestinationContainingIgnoreCase(String origin, String destination);
+
     List<Flight> findByAirlineIgnoreCase(String airline);
 }

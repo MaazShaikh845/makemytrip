@@ -3,10 +3,11 @@
 import React from "react";
 import SignupDialog from "@/components/ui/SignupDialog";
 import { Button } from "@/components/ui/button";
-import { Plane, LogOut, ShieldCheck } from "lucide-react";
+import { Plane, LogOut, ShieldCheck, Radio } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState, clearUser } from "@/store";
 import Link from "next/link";
+import NotificationCenter from "@/components/ui/NotificationCenter";
 
 export default function Navbar() {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -47,7 +48,21 @@ export default function Navbar() {
           </div>
         </Link>
 
-        <div className="flex items-center space-x-3">
+        {/* Center/Right Nav links */}
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Live Flight Radar Navigation Link */}
+          <Link
+            href="/tracker"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#FAF6EF] hover:bg-[#F3EBDD] text-[#C2410C] border border-[#E6DDD0] hover:border-[#C2410C]/40 transition-all cursor-pointer shadow-xs group"
+          >
+            <Radio className="w-3.5 h-3.5 text-[#C2410C] animate-pulse group-hover:scale-110 transition-transform" />
+            <span className="hidden sm:inline">Live Radar & Status</span>
+            <span className="sm:hidden">Radar</span>
+          </Link>
+
+          {/* In-app Notification Bell Dropdown */}
+          <NotificationCenter />
+
           {user ? (
             <div className="flex items-center space-x-2.5">
               {user.role === "ADMIN" && (

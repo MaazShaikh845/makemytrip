@@ -47,7 +47,7 @@ public class FlightController {
     public List<Flight> searchFlights(
             @RequestParam String origin,
             @RequestParam String destination) {
-        return flightRepository.findByOriginIgnoreCaseAndDestinationIgnoreCase(origin, destination);
+        return flightRepository.findByOriginContainingIgnoreCaseAndDestinationContainingIgnoreCase(origin.trim(), destination.trim());
     }
 
     @PostMapping
@@ -56,6 +56,7 @@ public class FlightController {
             @RequestBody Flight flight) {
 
         requireAdmin(userId);
+        flight.setSource("DATABASE");  // Ensure admin-added flights are marked as DATABASE
         Flight saved = flightRepository.save(flight);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -90,9 +91,14 @@ public class FlightController {
             @PathVariable String id) {
 
         requireAdmin(userId);
-        if (!flightRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Flight not found");
+        Flight flight = flightRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Flight not found"));
+        
+        // Only allow deletion of DATABASE source flights (not external API flights)
+        if (!"DATABASE".equals(flight.getSource())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only database-managed flights can be deleted");
         }
+        
         flightRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
