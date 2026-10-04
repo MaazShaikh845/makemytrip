@@ -1,3 +1,16 @@
+/**
+ * @file api.ts
+ * @description Centralised HTTP client for the MakeMy Tour frontend.
+ *
+ * All communication with the Spring Boot backend passes through this module.
+ * Using a single file as the API boundary means that the base URL, error handling,
+ * and header injection are defined in one place and re-used consistently across
+ * every page and component.
+ *
+ * @author Maaz Shaikh
+ * @module lib/api
+ */
+
 import axios from "axios";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "https://makemytrip-21z3.onrender.com";

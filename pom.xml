@@ -11,14 +11,23 @@
 	<groupId>com.makemytrip</groupId>
 	<artifactId>makemytrip</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
+	<name>MakeMy Tour</name>
+	<description>A full-stack travel booking platform for flights and hotels built with Spring Boot and Next.js.</description>
+	<url>https://github.com/MaazShaikh845/makemytrip</url>
 	<licenses>
-		<license/>
+		<license>
+			<name>MIT License</name>
+			<url>https://opensource.org/licenses/MIT</url>
+			<distribution>repo</distribution>
+		</license>
 	</licenses>
 	<developers>
-		<developer/>
+		<developer>
+			<id>MaazShaikh845</id>
+			<name>Maaz Shaikh</name>
+			<url>https://github.com/MaazShaikh845</url>
+			<roles><role>Lead Developer</role></roles>
+		</developer>
 	</developers>
 	<scm>
 		<connection/>
